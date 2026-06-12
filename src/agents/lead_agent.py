@@ -39,19 +39,7 @@ class LeadAgent:
     上下文压缩 → LLM 推理 → 条件路由（工具执行 / 结束）
     """
 
-    def __init__(
-        self,
-        model: str | None = None,
-        max_tokens: int | None = None,
-        temperature: float | None = None,
-    ):
-        # LLM 实例
-        self.llm: BaseChatModel = create_llm(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-
+    def __init__(self):
         # 工具注册表
         self.tools = {
             bash.name: bash,
@@ -63,7 +51,17 @@ class LeadAgent:
 
         # 跨回合持久化的压缩状态
         self.compact_state = CompactPipelineState()
-        self.model_name = config.MODEL_ID
+
+        # LLM 实例与模型名会在每个回合前重新加载配置并刷新
+        self.llm: BaseChatModel
+        self.model_name: str
+        self._refresh_llm()
+
+    def _refresh_llm(self) -> None:
+        """重新加载运行时配置并刷新 LLM 实例，实现配置热更新。"""
+        runtime_config = config.load_runtime_config()
+        self.llm = create_llm(runtime_config)
+        self.model_name = runtime_config.model
 
     def run_agent_turn(
         self,
@@ -81,6 +79,9 @@ class LeadAgent:
         Returns:
             更新后的消息列表
         """
+        # 每个回合前重新加载配置，支持运行时热更新模型
+        self._refresh_llm()
+
         # 重置本回合标记（如 snipped_this_turn）
         self.compact_state.reset_turn()
 
