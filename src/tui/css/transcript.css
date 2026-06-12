@@ -1,0 +1,78 @@
+/* Transcript / MessageItem 样式 */
+
+Transcript {
+    height: 1fr;
+    background: #1A1410;
+    color: #E8DCC8;
+    border: solid #4A3F30;
+    padding: 0 1;
+}
+
+#messages {
+    height: auto;
+    min-height: 100%;
+    width: 100%;
+}
+
+MessageItem {
+    width: 100%;
+    height: auto;
+}
+
+MessageItem.user {
+    padding-bottom: 1;
+}
+
+MessageItem .message-label {
+    width: 12;
+    text-style: bold;
+}
+
+MessageItem .message-content {
+    width: 1fr;
+    height: auto;
+    background: transparent;
+    border: none;
+    padding: 0 0 0 1;
+}
+
+MessageItem.user .message-label {
+    color: #D4A843;
+}
+
+MessageItem.user .message-content {
+    border-left: outer #D4A843;
+}
+
+MessageItem.assistant .message-label {
+    color: #C19A6B;
+}
+
+MessageItem.assistant .message-content {
+    border-left: outer #C19A6B;
+}
+
+MessageItem.progress .message-label {
+    color: #A89878;
+}
+
+MessageItem.progress .message-content {
+    border-left: outer #A89878;
+    text-style: dim;
+}
+
+MessageItem.tool .message-label {
+    color: #8B9DC3;
+}
+
+MessageItem.tool .message-content {
+    border-left: outer #8B9DC3;
+}
+
+/* Markdown 组件自带背景，覆盖为透明并移除默认边框 */
+MessageItem .message-content .markdown {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}

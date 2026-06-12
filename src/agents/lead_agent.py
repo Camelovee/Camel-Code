@@ -7,6 +7,9 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
@@ -15,6 +18,18 @@ from src.agents.graph import AgentState, build_graph
 from src.compact import CompactPipelineState
 from src.models import create_llm
 from src.tools import bash, edit_file, glob, read_file, write_file
+from src.utils.token_estimator import ContextStats
+
+
+@dataclass
+class AgentCallbacks:
+    """Agent 回合的回调接口，供 TUI 层消费事件。"""
+    on_tool_start: Callable[[str, dict], None] | None = None
+    on_tool_result: Callable[[str, str, bool], None] | None = None
+    on_assistant_message: Callable[[str], None] | None = None
+    on_progress_message: Callable[[str], None] | None = None
+    on_context_stats: Callable[[ContextStats], None] | None = None
+    on_compression: Callable[[str, dict], None] | None = None
 
 
 class LeadAgent:
@@ -54,12 +69,14 @@ class LeadAgent:
         self,
         messages: list,
         max_steps: int = 50,
+        callbacks: AgentCallbacks | None = None,
     ):
         """执行一个 Agent 回合。
 
         Args:
             messages: 对话历史（会被原地修改并返回）
             max_steps: 每回合最多 LLM 调用轮数
+            callbacks: 可选的 TUI 回调
 
         Returns:
             更新后的消息列表
@@ -68,7 +85,7 @@ class LeadAgent:
         self.compact_state.reset_turn()
 
         # 构建状态图（max_steps 通过闭包注入）
-        graph = build_graph(self.llm, self.tools, max_steps)
+        graph = build_graph(self.llm, self.tools, max_steps, callbacks)
 
         initial_state: AgentState = {
             "messages": messages,

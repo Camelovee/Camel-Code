@@ -1,0 +1,21 @@
+/* FooterBar 样式 */
+
+FooterBar {
+    background: #2D2418;
+    color: #A89878;
+    border-top: solid #4A3F30;
+    height: auto;
+    padding: 0 1;
+}
+
+FooterBar .status-busy {
+    color: #CD853F;
+}
+
+FooterBar .status-ready {
+    color: #6B9B6B;
+}
+
+FooterBar .compression-status {
+    color: #C19A6B;
+}

@@ -1,10 +1,12 @@
-"""CamelCode 入口 —— CLI 模式。
+"""CamelCode 入口 —— 支持 CLI 和 TUI 两种模式。
 
 Usage:
-    python main.py
+    python main.py        # 启动 TUI 模式
+    python main.py --cli  # 启动 CLI 模式
 """
 from __future__ import annotations
 
+import argparse
 import os
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,6 +16,7 @@ from src.prompts import getSystemPrompt
 
 
 def _run_cli() -> None:
+    """纯 CLI 模式。"""
     print("\033[93m" + r"""
       ╭───╮ ╭───╮
       │ ■ │ │ ■ │   Camel Code
@@ -58,5 +61,21 @@ def _run_cli() -> None:
         print()
 
 
+def _run_tui() -> None:
+    """TUI 模式。"""
+    from src.tui import CamelTUIApp
+
+    lead_agent = LeadAgent()
+    app = CamelTUIApp(agent=lead_agent, cwd=os.getcwd())
+    app.run()
+
+
 if __name__ == "__main__":
-    _run_cli()
+    parser = argparse.ArgumentParser(description="CamelCode - AI 编码助手")
+    parser.add_argument("--cli", action="store_true", help="使用 CLI 模式（默认 TUI）")
+    args = parser.parse_args()
+
+    if args.cli:
+        _run_cli()
+    else:
+        _run_tui()

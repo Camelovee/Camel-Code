@@ -1,0 +1,7 @@
+/* 骆驼沙漠配色主题 - Textual CSS */
+
+CamelTUIApp {
+    grid-rows: auto 1fr auto auto;
+    background: #1A1410;
+    color: #E8DCC8;
+}

@@ -52,6 +52,9 @@ Thumbs.db
 # Runtime generated files
 .tool_results/
 
+# Project docs (not versioned)
+docs/
+
 # other
 amp
 MiniCode

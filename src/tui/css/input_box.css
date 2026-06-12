@@ -1,0 +1,42 @@
+/* InputBox 样式 */
+
+InputBox {
+    background: #2D2418;
+    color: #E8DCC8;
+    height: auto;
+    padding: 0 1;
+}
+
+InputBox Static.hint {
+    width: 100%;
+    height: auto;
+    color: #A89878;
+    text-style: dim;
+}
+
+InputBox Horizontal {
+    height: auto;
+}
+
+InputBox Static.prompt {
+    width: auto;
+    color: $accent;
+    text-style: bold;
+    content-align: center middle;
+}
+
+InputBox Input {
+    background: #3D3220;
+    color: #E8DCC8;
+    border: solid #5A5040;
+    width: 1fr;
+}
+
+InputBox Input:focus {
+    border: solid #D4A843;
+}
+
+InputBox .prompt {
+    color: #D4A843;
+    text-style: bold;
+}

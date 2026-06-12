@@ -1,0 +1,33 @@
+/* Header 样式 */
+
+Header {
+    background: #2D2418;
+    color: #E8DCC8;
+    height: auto;
+    padding: 0;
+}
+
+Header .logo {
+    color: #D4A843;
+    text-style: bold;
+}
+
+Header .version {
+    color: #A89878;
+}
+
+Header .model-name {
+    color: #C19A6B;
+}
+
+Header .token-bar {
+    color: #6B9B6B;
+}
+
+Header .token-bar-warning {
+    color: #CD853F;
+}
+
+Header .token-bar-critical {
+    color: #C45B4A;
+}
