@@ -3,7 +3,7 @@
 对外保留 run_agent_turn 接口，内部使用 StateGraph 编排
 四层压缩 + ReAct 工具调用循环。
 
-Agent 通过钩子与外部解耦，不直接依赖 UI 框架。
+Agent 通过运行期回调与外部解耦，不直接依赖 UI 框架。
 """
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
 from src import config
+from src.agents.callbacks import AgentCallbacks
 from src.agents.graph import AgentState, build_graph
 from src.compact import CompactPipelineState
-from src.hook import AgentEventEmitter, HookManager
 from src.models import create_llm
 from src.tools import bash, edit_file, glob, grep, read_file, write_file, ask_user, load_skill
 
@@ -23,6 +23,8 @@ class LeadAgent:
 
     每回合通过 LangGraph StateGraph 执行：
     上下文压缩 → LLM 推理 → 条件路由（工具执行 / 结束）
+
+    外部通过 run_agent_turn 的 callbacks 参数监听执行过程。
     """
 
     def __init__(self):
@@ -46,42 +48,10 @@ class LeadAgent:
         self.pending_question: str | None = None
         self.pending_question_meta: dict | None = None
 
-        # 钩子管理器：供外部注册 UI 通知、日志等横切逻辑
-        self.hookManager = HookManager()
-
-        # 事件发射器：由 Agent 管理，TUI 通过 on_xxx 方法订阅
-        self.events = AgentEventEmitter(self.hookManager)
-
         # LLM 实例与模型名会在每个回合前重新加载配置并刷新
         self.llm: BaseChatModel
         self.model_name: str
         self._refresh_llm()
-
-    # ── 高层事件订阅接口（供 TUI 等外部系统使用）──────────────────
-
-    def on_tool_start(self, handler):
-        """订阅工具开始事件。"""
-        self.events.on_tool_start(handler)
-
-    def on_tool_result(self, handler):
-        """订阅工具结果事件。"""
-        self.events.on_tool_result(handler)
-
-    def on_assistant_message(self, handler):
-        """订阅助手消息事件。"""
-        self.events.on_assistant_message(handler)
-
-    def on_progress_message(self, handler):
-        """订阅进度消息事件。"""
-        self.events.on_progress_message(handler)
-
-    def on_context_stats(self, handler):
-        """订阅上下文统计更新事件。"""
-        self.events.on_context_stats(handler)
-
-    def on_compression(self, handler):
-        """订阅压缩事件。"""
-        self.events.on_compression(handler)
 
     def _refresh_llm(self) -> None:
         """重新加载运行时配置并刷新 LLM 实例，实现配置热更新。"""
@@ -93,12 +63,14 @@ class LeadAgent:
         self,
         messages: list,
         max_steps: int = 50,
+        callbacks: AgentCallbacks | None = None,
     ):
         """执行一个 Agent 回合。
 
         Args:
             messages: 对话历史（会被原地修改并返回）
             max_steps: 每回合最多 LLM 调用轮数
+            callbacks: 可选的回调集合，用于向外部通知执行过程
 
         Returns:
             更新后的消息列表
@@ -110,7 +82,7 @@ class LeadAgent:
         self.compact_state.reset_turn()
 
         # 构建状态图（max_steps 通过闭包注入）
-        graph = build_graph(self.llm, self.tools, max_steps, self.hookManager)
+        graph = build_graph(self.llm, self.tools, max_steps, callbacks)
 
         initial_state: AgentState = {
             "messages": messages,

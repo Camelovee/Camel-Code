@@ -9,6 +9,7 @@ from textual.app import App, ComposeResult
 from textual.worker import Worker, WorkerState
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from src.agents.callbacks import AgentCallbacks
 from src.agents.lead_agent import LeadAgent
 from src.prompts import get_system_prompt
 from src.tui.events import (
@@ -48,14 +49,6 @@ class CamelTUIApp(App):
         self._cwd = cwd
         self._history: list = []
         self._is_busy: bool = False
-
-        # 订阅 Agent 事件，由 Agent 管理 hook 注册，TUI 只依赖 Agent 接口
-        self._agent.on_tool_start(self._on_tool_start)
-        self._agent.on_tool_result(self._on_tool_result)
-        self._agent.on_assistant_message(self._on_assistant_message)
-        self._agent.on_progress_message(self._on_progress_message)
-        self._agent.on_context_stats(self._on_context_stats)
-        self._agent.on_compression(self._on_compression)
 
     def compose(self) -> ComposeResult:
         """组装 UI。"""
@@ -165,14 +158,27 @@ class CamelTUIApp(App):
 
     # ── Agent 执行 ─────────────────────────────────────────────
 
+    def _make_callbacks(self) -> AgentCallbacks:
+        """构造传递给 Agent 的回调集合。"""
+        return AgentCallbacks(
+            on_tool_start=self._on_tool_start,
+            on_tool_result=self._on_tool_result,
+            on_assistant_message=self._on_assistant_message,
+            on_progress_message=self._on_progress_message,
+            on_context_stats=self._on_context_stats,
+            on_compression=self._on_compression,
+        )
+
     def _start_agent_turn(self) -> None:
         """启动 Agent 回合（在后台 Worker 中执行）。"""
         self._is_busy = True
         self._footer.set_status("思考中...", busy=True)
 
+        callbacks = self._make_callbacks()
+
         def run_agent() -> list:
             """在 Worker 线程中执行的 Agent 逻辑。"""
-            return self._agent.run_agent_turn(self._history)
+            return self._agent.run_agent_turn(self._history, callbacks=callbacks)
 
         self.run_worker(run_agent, thread=True, name="agent_turn")
 
@@ -207,30 +213,30 @@ class CamelTUIApp(App):
         self._transcript.add_user_message(final_answer)
         self._start_agent_turn()
 
-    # ── Agent 事件处理 ─────────────────────────────────────────
+    # ── Agent 回调处理 ─────────────────────────────────────────
 
     def _on_tool_start(self, name: str, args: dict) -> None:
-        """Agent 工具开始事件的 handler。"""
+        """Agent 工具开始回调。"""
         self.call_from_thread(self.post_message, ToolStartEvent(name, args))
 
     def _on_tool_result(self, name: str, output: str, is_error: bool) -> None:
-        """Agent 工具结果事件的 handler。"""
+        """Agent 工具结果回调。"""
         self.call_from_thread(self.post_message, ToolResultEvent(name, output, is_error))
 
     def _on_assistant_message(self, content: str) -> None:
-        """Agent 助手消息事件的 handler。"""
+        """Agent 助手消息回调。"""
         self.call_from_thread(self.post_message, AssistantMessageEvent(content))
 
     def _on_progress_message(self, content: str) -> None:
-        """Agent 进度消息事件的 handler。"""
+        """Agent 进度消息回调。"""
         self.call_from_thread(self.post_message, ProgressMessageEvent(content))
 
     def _on_context_stats(self, stats) -> None:
-        """Agent 上下文统计事件的 handler。"""
+        """Agent 上下文统计回调。"""
         self.call_from_thread(self.post_message, ContextStatsEvent(stats))
 
     def _on_compression(self, kind: str, result: dict) -> None:
-        """Agent 压缩事件的 handler。"""
+        """Agent 压缩事件回调。"""
         self.call_from_thread(self.post_message, CompressionEvent(kind, result))
 
     def on_tool_start_event(self, event: ToolStartEvent) -> None:

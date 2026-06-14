@@ -1,4 +1,4 @@
-[中文](README.md) · [Roadmap](ROADMAP_EN.md)
+[中文](README.md) · [Roadmap](ROADMAP_EN.md) · [Architecture](ARCHITECTURE_EN.md)
 
 # CamelCode 🐫
 

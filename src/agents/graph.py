@@ -15,9 +15,9 @@ from typing import TypedDict
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.graph import END, StateGraph
 
+from src.agents.callbacks import AgentCallbacks
 from src.compact import CompactPipelineState, run_compact_pipeline
 from src.compact.tool_result_storage import replace_large_tool_result
-from src.hook import HookManager
 from src.utils.token_estimator import compute_context_stats
 
 
@@ -44,11 +44,64 @@ def _should_continue(state: AgentState, max_steps: int) -> str:
     return "tool_node"
 
 
+def _emit_assistant_content(callbacks: AgentCallbacks | None, content) -> None:
+    """解析 LLM 返回内容并分发 assistant / progress 回调。"""
+    if callbacks is None:
+        return
+
+    raw = getattr(content, "content", "") if hasattr(content, "content") else content
+
+    if isinstance(raw, list):
+        for block in raw:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type == "thinking":
+                thinking_text = str(block.get("thinking", ""))
+                if thinking_text and callbacks.on_progress_message:
+                    callbacks.on_progress_message(thinking_text)
+            elif block_type == "text":
+                text = str(block.get("text", ""))
+                if text and callbacks.on_assistant_message:
+                    callbacks.on_assistant_message(text)
+    elif raw:
+        if callbacks.on_assistant_message:
+            callbacks.on_assistant_message(str(raw))
+
+
+def _emit_compression(callbacks: AgentCallbacks | None, result, stats) -> None:
+    """根据压缩结果分发 context_stats 与 compression 回调。"""
+    if callbacks is None:
+        return
+
+    if callbacks.on_context_stats:
+        callbacks.on_context_stats(stats)
+
+    if callbacks.on_compression is None:
+        return
+
+    if result.snip_result and result.snip_result.did_snip:
+        callbacks.on_compression(
+            "snip",
+            {"tokens_freed": getattr(result.snip_result, "tokens_freed", 0)},
+        )
+    if result.collapse_result and result.collapse_result.collapsed:
+        callbacks.on_compression("collapse", {})
+    if result.auto_compact_result:
+        callbacks.on_compression(
+            "auto-compact",
+            {
+                "tokens_before": result.stats_before.get("total_tokens", 0),
+                "tokens_after": result.stats_after.get("total_tokens", 0),
+            },
+        )
+
+
 def build_graph(
     llm,
     tools_dict: dict,
     max_steps: int = 50,
-    hookManager: HookManager | None = None,
+    callbacks: AgentCallbacks | None = None,
 ):
     """构建并编译 Agent 状态图。
 
@@ -56,14 +109,14 @@ def build_graph(
         llm: BaseChatModel 实例
         tools_dict: 工具名称 -> 工具实例 的映射
         max_steps: 每回合最多 LLM 调用轮数
-        hookManager: 可选的钩子管理器，用于解耦 UI 通知等横切逻辑
+        callbacks: 可选的回调集合，用于向外部通知执行过程
 
     Returns:
         编译后的 StateGraph 可调用对象
     """
     tools_list = list(tools_dict.values())
 
-    # ── 闭包节点（捕获 llm / tools / hookManager）─────────────────────────────
+    # ── 闭包节点（捕获 llm / tools / callbacks）─────────────────────────────
     def compress_node(state: AgentState) -> dict:
         result = run_compact_pipeline(
             messages=state["messages"],
@@ -73,10 +126,10 @@ def build_graph(
             state=state["compact_state"],
         )
 
-        # 触发压缩相关钩子
-        if hookManager and hookManager.has_hook("after_compress"):
+        # 触发压缩相关回调
+        if callbacks:
             stats_after = compute_context_stats(result.model_messages, state["model_name"])
-            hookManager.call("after_compress", state=state, result=result, stats=stats_after)
+            _emit_compression(callbacks, result, stats_after)
 
         return {
             "messages": result.messages,
@@ -86,9 +139,8 @@ def build_graph(
     def llm_node(state: AgentState) -> dict:
         response = llm.bind_tools(tools_list).invoke(state["model_messages"])
 
-        # 触发 LLM 响应钩子
-        if hookManager and hookManager.has_hook("after_llm"):
-            hookManager.call("after_llm", state=state, response=response)
+        # 触发 LLM 响应回调
+        _emit_assistant_content(callbacks, response)
 
         return {
             "messages": state["messages"] + [response],
@@ -109,9 +161,9 @@ def build_graph(
         for tc in last_msg.tool_calls:
             name, args, tool_id = tc["name"], tc["args"], tc["id"]
 
-            # 触发工具开始前钩子
-            if hookManager and hookManager.has_hook("before_tool"):
-                hookManager.call("before_tool", state=state, name=name, args=args)
+            # 触发工具开始前回调
+            if callbacks and callbacks.on_tool_start:
+                callbacks.on_tool_start(name, args)
 
             tool_func = tools_dict.get(name)
             if not tool_func:
@@ -135,25 +187,14 @@ def build_graph(
                 pending_question_meta = parsed.get("meta")
                 extra_messages.append(AIMessage(content=pending_question))
 
-                # 触发 ask_user 钩子，让 UI 显示问题
-                if hookManager and hookManager.has_hook("on_ask_user"):
-                    hookManager.call(
-                        "on_ask_user",
-                        state=state,
-                        question=pending_question,
-                        meta=pending_question_meta,
-                    )
+                # 触发 ask_user 回调，让外部显示问题
+                if callbacks and callbacks.on_assistant_message:
+                    callbacks.on_assistant_message(pending_question)
 
-            # 触发工具结果钩子
-            if hookManager and hookManager.has_hook("after_tool"):
+            # 触发工具结果回调
+            if callbacks and callbacks.on_tool_result:
                 is_error = result.startswith("Error:") or result.startswith("Tool not found")
-                hookManager.call(
-                    "after_tool",
-                    state=state,
-                    name=name,
-                    output=result,
-                    is_error=is_error,
-                )
+                callbacks.on_tool_result(name, result, is_error)
 
             raw_msg = ToolMessage(
                 content=str(result),

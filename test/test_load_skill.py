@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from src.agents.callbacks import AgentCallbacks
 from src.agents.graph import AgentState, build_graph
 from src.agents.lead_agent import LeadAgent
 from src.compact import CompactPipelineState
-from src.hook import HookManager
 from src.skill.skill import _extract_meta_data, load_skill_content
 from src.tools import load_skill
 from src.tools.load_skill import load_skill as load_skill_tool
@@ -156,14 +156,13 @@ def test_load_skill_in_graph_tool_node(tmp_path, monkeypatch):
     ]
 
     handler = MagicMock()
-    hook_manager = HookManager()
-    hook_manager.register("after_tool", handler)
+    callbacks = AgentCallbacks(on_tool_result=handler)
 
-    graph = build_graph(mock_llm, {"load_skill": load_skill}, max_steps=10, hookManager=hook_manager)
+    graph = build_graph(mock_llm, {"load_skill": load_skill}, max_steps=10, callbacks=callbacks)
     graph.invoke(state, config={"recursion_limit": 40})
 
     handler.assert_called_once()
-    args = handler.call_args.kwargs
-    assert args["name"] == "load_skill"
-    assert "Demo skill content." in args["output"]
-    assert args["is_error"] is False
+    args = handler.call_args[0]
+    assert args[0] == "load_skill"
+    assert "Demo skill content." in args[1]
+    assert args[2] is False

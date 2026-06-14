@@ -1,82 +1,169 @@
-"""测试 LeadAgent 高层事件订阅接口。"""
+"""测试 Agent 运行期回调机制。"""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from src.agents.lead_agent import LeadAgent
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from src.agents.callbacks import AgentCallbacks
+from src.agents.graph import AgentState, build_graph, _emit_compression
+from src.compact import CompactPipelineState
+from src.tools import bash
 
 
-def test_agent_emits_tool_start_event():
-    """on_tool_start 注册的 handler 应在工具开始前被调用。"""
-    agent = LeadAgent()
+def _make_state(messages: list) -> AgentState:
+    """构造最小 AgentState。"""
+    return {
+        "messages": messages,
+        "model_messages": list(messages),
+        "step": 0,
+        "compact_state": CompactPipelineState(),
+        "model_name": "gpt-4",
+        "awaiting_user_input": False,
+        "pending_question": None,
+        "pending_question_meta": None,
+    }
+
+
+def test_graph_triggers_tool_start_callback():
+    """tool_node 执行前应触发 on_tool_start 回调。"""
+    messages = [
+        SystemMessage(content="system"),
+        HumanMessage(content="hi"),
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "bash",
+                "args": {"command": "echo hi"},
+                "id": "call_1",
+            }],
+        ),
+    ]
+    state = _make_state(messages)
+
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value.invoke.side_effect = [
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "bash",
+                "args": {"command": "echo hi"},
+                "id": "call_1",
+            }],
+        ),
+        AIMessage(content="done"),
+    ]
+
     handler = MagicMock()
-    agent.on_tool_start(handler)
+    callbacks = AgentCallbacks(on_tool_start=handler)
 
-    agent.hookManager.call("before_tool", state={}, name="bash", args={"command": "ls"})
+    graph = build_graph(mock_llm, {"bash": bash}, max_steps=10, callbacks=callbacks)
+    graph.invoke(state, config={"recursion_limit": 40})
 
-    handler.assert_called_once_with("bash", {"command": "ls"})
+    handler.assert_called_once_with("bash", {"command": "echo hi"})
 
 
-def test_agent_emits_tool_result_event():
-    """on_tool_result 注册的 handler 应在工具结束后被调用。"""
-    agent = LeadAgent()
+def test_graph_triggers_tool_result_callback():
+    """tool_node 执行后应触发 on_tool_result 回调。"""
+    messages = [
+        SystemMessage(content="system"),
+        HumanMessage(content="hi"),
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "bash",
+                "args": {"command": "echo hi"},
+                "id": "call_1",
+            }],
+        ),
+    ]
+    state = _make_state(messages)
+
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value.invoke.side_effect = [
+        AIMessage(
+            content="",
+            tool_calls=[{
+                "name": "bash",
+                "args": {"command": "echo hi"},
+                "id": "call_1",
+            }],
+        ),
+        AIMessage(content="done"),
+    ]
+
     handler = MagicMock()
-    agent.on_tool_result(handler)
+    callbacks = AgentCallbacks(on_tool_result=handler)
 
-    agent.hookManager.call(
-        "after_tool", state={}, name="bash", output="hello", is_error=False
-    )
+    graph = build_graph(mock_llm, {"bash": bash}, max_steps=10, callbacks=callbacks)
+    graph.invoke(state, config={"recursion_limit": 40})
 
-    handler.assert_called_once_with("bash", "hello", False)
+    handler.assert_called_once()
+    args = handler.call_args[0]
+    assert args[0] == "bash"
+    assert "hi" in args[1]
+    assert args[2] is False
 
 
-def test_agent_emits_assistant_message():
-    """on_assistant_message 注册的 handler 应在 LLM 返回文本时被调用。"""
-    agent = LeadAgent()
+def test_graph_triggers_assistant_message_callback():
+    """llm_node 返回文本内容时应触发 on_assistant_message 回调。"""
+    messages = [SystemMessage(content="system"), HumanMessage(content="hi")]
+    state = _make_state(messages)
+
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="hello")
+
     handler = MagicMock()
-    agent.on_assistant_message(handler)
+    callbacks = AgentCallbacks(on_assistant_message=handler)
 
-    response = MagicMock()
-    response.content = "hello"
-    agent.hookManager.call("after_llm", state={}, response=response)
+    graph = build_graph(mock_llm, {}, max_steps=10, callbacks=callbacks)
+    graph.invoke(state, config={"recursion_limit": 40})
 
     handler.assert_called_once_with("hello")
 
 
-def test_agent_emits_progress_message():
-    """on_progress_message 注册的 handler 应在 LLM 返回 thinking 块时被调用。"""
-    agent = LeadAgent()
-    handler = MagicMock()
-    agent.on_progress_message(handler)
+def test_graph_triggers_progress_message_callback():
+    """llm_node 返回 thinking 块时应触发 on_progress_message 回调。"""
+    messages = [SystemMessage(content="system"), HumanMessage(content="hi")]
+    state = _make_state(messages)
 
-    response = MagicMock()
-    response.content = [{"type": "thinking", "thinking": "thinking..."}]
-    agent.hookManager.call("after_llm", state={}, response=response)
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content=[{"type": "thinking", "thinking": "thinking..."}]
+    )
+
+    handler = MagicMock()
+    callbacks = AgentCallbacks(on_progress_message=handler)
+
+    graph = build_graph(mock_llm, {}, max_steps=10, callbacks=callbacks)
+    graph.invoke(state, config={"recursion_limit": 40})
 
     handler.assert_called_once_with("thinking...")
 
 
-def test_agent_emits_context_stats():
-    """on_context_stats 注册的 handler 应在压缩后被调用。"""
-    agent = LeadAgent()
+def test_graph_triggers_context_stats_callback():
+    """compress_node 执行后应触发 on_context_stats 回调。"""
+    messages = [SystemMessage(content="system"), HumanMessage(content="hi")]
+    state = _make_state(messages)
+
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="done")
+
     handler = MagicMock()
-    agent.on_context_stats(handler)
+    callbacks = AgentCallbacks(on_context_stats=handler)
 
-    result = MagicMock()
-    result.snip_result = None
-    result.collapse_result = None
-    result.auto_compact_result = None
-    stats = {"total_tokens": 100}
-    agent.hookManager.call("after_compress", state={}, result=result, stats=stats)
+    graph = build_graph(mock_llm, {}, max_steps=10, callbacks=callbacks)
+    graph.invoke(state, config={"recursion_limit": 40})
 
-    handler.assert_called_once_with(stats)
+    handler.assert_called_once()
+    stats = handler.call_args[0][0]
+    assert hasattr(stats, "total_tokens")
 
 
-def test_agent_emits_compression_event():
-    """on_compression 注册的 handler 应在压缩事件触发时被调用。"""
-    agent = LeadAgent()
+def test_emit_compression_distributes_events():
+    """_emit_compression 应根据压缩结果分发 on_compression 回调。"""
     handler = MagicMock()
-    agent.on_compression(handler)
+    callbacks = AgentCallbacks(on_compression=handler)
 
     result = MagicMock()
     result.snip_result = MagicMock()
@@ -86,6 +173,28 @@ def test_agent_emits_compression_event():
     result.auto_compact_result = None
     result.stats_before = {}
     result.stats_after = {}
-    agent.hookManager.call("after_compress", state={}, result=result, stats={})
+
+    _emit_compression(callbacks, result, {"total_tokens": 100})
 
     handler.assert_called_once_with("snip", {"tokens_freed": 50})
+
+
+def test_lead_agent_run_accepts_callbacks():
+    """LeadAgent.run_agent_turn 应接受 callbacks 参数并正确传递。"""
+    from src.agents.lead_agent import LeadAgent
+
+    agent = LeadAgent()
+    handler = MagicMock()
+    callbacks = AgentCallbacks(on_assistant_message=handler)
+
+    # mock LLM，让它直接返回文本并结束回合
+    agent.llm = MagicMock()
+    agent.llm.bind_tools.return_value.invoke.return_value = AIMessage(content="hello")
+    # 跳过 run_agent_turn 内部的配置热刷新，避免覆盖 mock LLM
+    agent._refresh_llm = lambda: None
+
+    messages = [SystemMessage(content="system"), HumanMessage(content="hi")]
+    agent.run_agent_turn(messages, max_steps=5, callbacks=callbacks)
+
+    handler.assert_called_once_with("hello")
+    assert messages[-1].content == "hello"
