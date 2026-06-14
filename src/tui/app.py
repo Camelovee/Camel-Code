@@ -10,7 +10,7 @@ from textual.worker import Worker, WorkerState
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.agents.lead_agent import LeadAgent
-from src.prompts import getSystemPrompt
+from src.prompts import get_system_prompt
 from src.tui.callbacks import make_callbacks
 from src.tui.events import (
     AgentEvent,
@@ -68,7 +68,7 @@ class CamelTUIApp(App):
     def on_mount(self) -> None:
         """挂载后初始化。"""
         # 添加 system prompt
-        self._history.append(SystemMessage(content=getSystemPrompt(self._cwd)))
+        self._history.append(SystemMessage(content=get_system_prompt(self._cwd)))
         # 设置标题
         self.title = "CamelCode"
         self.sub_title = self._agent.model_name

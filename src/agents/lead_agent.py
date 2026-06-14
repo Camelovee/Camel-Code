@@ -15,7 +15,7 @@ from src.agents.callbacks import AgentCallbacks
 from src.agents.graph import AgentState, build_graph
 from src.compact import CompactPipelineState
 from src.models import create_llm
-from src.tools import bash, edit_file, glob, grep, read_file, write_file, ask_user
+from src.tools import bash, edit_file, glob, grep, read_file, write_file, ask_user, load_skill
 
 
 class LeadAgent:
@@ -37,6 +37,7 @@ class LeadAgent:
             glob.name: glob,
             grep.name: grep,
             ask_user.name: ask_user,
+            load_skill.name: load_skill,
         }
 
         # 跨回合持久化的压缩状态
