@@ -1,0 +1,51 @@
+/* QuestionScreen 弹窗样式 */
+
+QuestionScreen {
+    align: center middle;
+    background: $surface-darken-1;
+}
+
+#question-dialog {
+    width: 80;
+    height: auto;
+    max-height: 45;
+    border: solid $primary;
+    background: $surface;
+    padding: 1 2;
+    overflow: auto scroll;
+}
+
+#question-markdown {
+    width: 100%;
+    height: auto;
+    text-align: left;
+    margin-bottom: 1;
+    overflow: auto scroll;
+}
+
+#answer-input {
+    margin-bottom: 1;
+}
+
+#answer-radio {
+    height: auto;
+    max-height: 20;
+    margin-bottom: 1;
+    overflow: auto scroll;
+}
+
+#answer-selection {
+    height: auto;
+    max-height: 20;
+    margin-bottom: 1;
+    overflow: auto scroll;
+}
+
+#button-row {
+    height: auto;
+    align: center middle;
+}
+
+#button-row Button {
+    margin: 0 1;
+}

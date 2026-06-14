@@ -9,9 +9,8 @@ from textual.app import App, ComposeResult
 from textual.worker import Worker, WorkerState
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from src.agents.lead_agent import AgentCallbacks, LeadAgent
+from src.agents.lead_agent import LeadAgent
 from src.prompts import getSystemPrompt
-from src.tui.callbacks import make_callbacks
 from src.tui.events import (
     AgentEvent,
     AssistantMessageEvent,
@@ -25,6 +24,7 @@ from src.tui.colors import CAMEL, ERROR
 from src.tui.widgets.footer import FooterBar
 from src.tui.widgets.header import Header
 from src.tui.widgets.input_box import InputBox
+from src.tui.screens.question_screen import QuestionScreen
 from src.tui.widgets.transcript import Transcript
 
 
@@ -48,6 +48,14 @@ class CamelTUIApp(App):
         self._cwd = cwd
         self._history: list = []
         self._is_busy: bool = False
+
+        # 订阅 Agent 事件，由 Agent 管理 hook 注册，TUI 只依赖 Agent 接口
+        self._agent.on_tool_start(self._on_tool_start)
+        self._agent.on_tool_result(self._on_tool_result)
+        self._agent.on_assistant_message(self._on_assistant_message)
+        self._agent.on_progress_message(self._on_progress_message)
+        self._agent.on_context_stats(self._on_context_stats)
+        self._agent.on_compression(self._on_compression)
 
     def compose(self) -> ComposeResult:
         """组装 UI。"""
@@ -162,20 +170,25 @@ class CamelTUIApp(App):
         self._is_busy = True
         self._footer.set_status("思考中...", busy=True)
 
-        callbacks = make_callbacks(self)
-
         def run_agent() -> list:
             """在 Worker 线程中执行的 Agent 逻辑。"""
-            return self._agent.run_agent_turn(
-                self._history,
-                callbacks=callbacks,
-            )
+            return self._agent.run_agent_turn(self._history)
 
         self.run_worker(run_agent, thread=True, name="agent_turn")
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Worker 状态变化时更新 UI。"""
         if event.state == WorkerState.SUCCESS:
+            if self._agent.awaiting_user_input:
+                self.push_screen(
+                    QuestionScreen(
+                        self._agent.pending_question or "",
+                        self._agent.pending_question_meta,
+                    ),
+                    callback=self._on_question_answered,
+                )
+                return
+
             self._is_busy = False
             self._footer.set_status("就绪", busy=False)
             self._input_box.focus_input()
@@ -187,7 +200,38 @@ class CamelTUIApp(App):
             )
             self._input_box.focus_input()
 
+    def _on_question_answered(self, answer: str | None) -> None:
+        """处理 QuestionScreen 返回的答案。"""
+        final_answer = answer if answer is not None else "CANCELLED"
+        self._history.append(HumanMessage(content=final_answer))
+        self._transcript.add_user_message(final_answer)
+        self._start_agent_turn()
+
     # ── Agent 事件处理 ─────────────────────────────────────────
+
+    def _on_tool_start(self, name: str, args: dict) -> None:
+        """Agent 工具开始事件的 handler。"""
+        self.call_from_thread(self.post_message, ToolStartEvent(name, args))
+
+    def _on_tool_result(self, name: str, output: str, is_error: bool) -> None:
+        """Agent 工具结果事件的 handler。"""
+        self.call_from_thread(self.post_message, ToolResultEvent(name, output, is_error))
+
+    def _on_assistant_message(self, content: str) -> None:
+        """Agent 助手消息事件的 handler。"""
+        self.call_from_thread(self.post_message, AssistantMessageEvent(content))
+
+    def _on_progress_message(self, content: str) -> None:
+        """Agent 进度消息事件的 handler。"""
+        self.call_from_thread(self.post_message, ProgressMessageEvent(content))
+
+    def _on_context_stats(self, stats) -> None:
+        """Agent 上下文统计事件的 handler。"""
+        self.call_from_thread(self.post_message, ContextStatsEvent(stats))
+
+    def _on_compression(self, kind: str, result: dict) -> None:
+        """Agent 压缩事件的 handler。"""
+        self.call_from_thread(self.post_message, CompressionEvent(kind, result))
 
     def on_tool_start_event(self, event: ToolStartEvent) -> None:
         """处理工具开始事件。"""

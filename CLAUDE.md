@@ -21,7 +21,7 @@ Ask: "Does this change break the contract between layers?" If unsure, trace the 
 
 - Docstrings and comments: Use **Chinese** (follow existing style).
 - Variable names, class names, function names: Use **English**.
-- String literals for user-facing output: **Chinese** (follow CLI style in `main.py`).
+- String literals for user-facing output: **Chinese** (follow TUI style in `main.py`).
 - Log/diagnostic messages: Follow existing format (`[snip]`, `[collapse]`, `[auto-compact]`).
 
 Don't mix languages in the same comment. Don't translate existing Chinese docstrings to English.
@@ -52,7 +52,7 @@ Clean up your own orphans: if your change removes a field from a dataclass, remo
 **Run it. Watch the compression diagnostics.**
 
 Before declaring a change complete:
-- Start the CLI (`python main.py`) and send a query that triggers tool use.
+- Start the TUI (`python main.py`) and send a query that triggers tool use.
 - Verify compression diagnostics appear correctly: `[snip]`, `[collapse]`, `[auto-compact]`.
 - Check that tool results are handled properly (no duplicate replacements, no dropped messages).
 - For new tools: verify they appear in the model's tool list and execute correctly.
