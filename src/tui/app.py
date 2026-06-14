@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.worker import Worker, WorkerState
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from src.agents.lead_agent import AgentCallbacks, LeadAgent
+from src.agents.lead_agent import LeadAgent
 from src.prompts import getSystemPrompt
 from src.tui.callbacks import make_callbacks
 from src.tui.events import (
@@ -25,6 +25,7 @@ from src.tui.colors import CAMEL, ERROR
 from src.tui.widgets.footer import FooterBar
 from src.tui.widgets.header import Header
 from src.tui.widgets.input_box import InputBox
+from src.tui.screens.question_screen import QuestionScreen
 from src.tui.widgets.transcript import Transcript
 
 
@@ -166,16 +167,23 @@ class CamelTUIApp(App):
 
         def run_agent() -> list:
             """在 Worker 线程中执行的 Agent 逻辑。"""
-            return self._agent.run_agent_turn(
-                self._history,
-                callbacks=callbacks,
-            )
+            return self._agent.run_agent_turn(self._history, callbacks=callbacks)
 
         self.run_worker(run_agent, thread=True, name="agent_turn")
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Worker 状态变化时更新 UI。"""
         if event.state == WorkerState.SUCCESS:
+            if self._agent.awaiting_user_input:
+                self.push_screen(
+                    QuestionScreen(
+                        self._agent.pending_question or "",
+                        self._agent.pending_question_meta,
+                    ),
+                    callback=self._on_question_answered,
+                )
+                return
+
             self._is_busy = False
             self._footer.set_status("就绪", busy=False)
             self._input_box.focus_input()
@@ -186,6 +194,13 @@ class CamelTUIApp(App):
                 f"[{ERROR}]请求执行过程中出现错误，请重试。[/]"
             )
             self._input_box.focus_input()
+
+    def _on_question_answered(self, answer: str | None) -> None:
+        """处理 QuestionScreen 返回的答案。"""
+        final_answer = answer if answer is not None else "CANCELLED"
+        self._history.append(HumanMessage(content=final_answer))
+        self._transcript.add_user_message(final_answer)
+        self._start_agent_turn()
 
     # ── Agent 事件处理 ─────────────────────────────────────────
 

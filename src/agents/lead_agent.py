@@ -3,33 +3,19 @@
 对外保留 run_agent_turn 接口，内部使用 StateGraph 编排
 四层压缩 + ReAct 工具调用循环。
 
-纯 CLI 模式：Agent 不依赖任何 UI 框架，无回调、无事件流。
+Agent 通过运行期回调与外部解耦，不直接依赖 UI 框架。
 """
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Callable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
 from src import config
+from src.agents.callbacks import AgentCallbacks
 from src.agents.graph import AgentState, build_graph
 from src.compact import CompactPipelineState
 from src.models import create_llm
-from src.tools import bash, edit_file, glob, read_file, write_file
-from src.utils.token_estimator import ContextStats
-
-
-@dataclass
-class AgentCallbacks:
-    """Agent 回合的回调接口，供 TUI 层消费事件。"""
-    on_tool_start: Callable[[str, dict], None] | None = None
-    on_tool_result: Callable[[str, str, bool], None] | None = None
-    on_assistant_message: Callable[[str], None] | None = None
-    on_progress_message: Callable[[str], None] | None = None
-    on_context_stats: Callable[[ContextStats], None] | None = None
-    on_compression: Callable[[str, dict], None] | None = None
+from src.tools import bash, edit_file, glob, grep, read_file, write_file, ask_user
 
 
 class LeadAgent:
@@ -37,6 +23,8 @@ class LeadAgent:
 
     每回合通过 LangGraph StateGraph 执行：
     上下文压缩 → LLM 推理 → 条件路由（工具执行 / 结束）
+
+    外部通过 run_agent_turn 的 callbacks 参数监听执行过程。
     """
 
     def __init__(self):
@@ -47,10 +35,17 @@ class LeadAgent:
             write_file.name: write_file,
             edit_file.name: edit_file,
             glob.name: glob,
+            grep.name: grep,
+            ask_user.name: ask_user,
         }
 
         # 跨回合持久化的压缩状态
         self.compact_state = CompactPipelineState()
+
+        # 等待用户输入状态（由 ask_user 工具触发）
+        self.awaiting_user_input = False
+        self.pending_question: str | None = None
+        self.pending_question_meta: dict | None = None
 
         # LLM 实例与模型名会在每个回合前重新加载配置并刷新
         self.llm: BaseChatModel
@@ -74,7 +69,7 @@ class LeadAgent:
         Args:
             messages: 对话历史（会被原地修改并返回）
             max_steps: 每回合最多 LLM 调用轮数
-            callbacks: 可选的 TUI 回调
+            callbacks: 可选的回调集合，用于向外部通知执行过程
 
         Returns:
             更新后的消息列表
@@ -101,6 +96,11 @@ class LeadAgent:
             initial_state,
             config={"recursion_limit": max_steps * 3 + 10},
         )
+
+        # 读取等待用户输入状态
+        self.awaiting_user_input = result.get("awaiting_user_input", False)
+        self.pending_question = result.get("pending_question")
+        self.pending_question_meta = result.get("pending_question_meta")
 
         # 将完整历史写回外部列表
         messages[:] = result["messages"]

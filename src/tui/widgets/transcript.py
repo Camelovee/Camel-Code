@@ -80,9 +80,8 @@ class Transcript(VerticalScroll):
         """添加工具执行结果。"""
         status = "✗ 错误" if is_error else "✓ 成功"
         detail = ""
-        if is_error:
-            preview = output[:200] + "..." if len(output) > 200 else output
-            detail = f"\n{preview}"
+        preview = output[:200] + "..." if len(output) > 200 else output
+        detail = f"\n{preview}"
         self._add_message(tool_name, f"{status}{detail}", "tool")
 
     def add_compression_info(self, kind: str, result: dict) -> None:
