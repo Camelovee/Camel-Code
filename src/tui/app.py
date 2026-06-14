@@ -215,29 +215,33 @@ class CamelTUIApp(App):
 
     # ── Agent 回调处理 ─────────────────────────────────────────
 
+    def _emit(self, event: AgentEvent) -> None:
+        """将 Agent 事件从工作线程投递到主线程处理。"""
+        self.call_from_thread(self.post_message, event)
+
     def _on_tool_start(self, name: str, args: dict) -> None:
         """Agent 工具开始回调。"""
-        self.call_from_thread(self.post_message, ToolStartEvent(name, args))
+        self._emit(ToolStartEvent(name, args))
 
     def _on_tool_result(self, name: str, output: str, is_error: bool) -> None:
         """Agent 工具结果回调。"""
-        self.call_from_thread(self.post_message, ToolResultEvent(name, output, is_error))
+        self._emit(ToolResultEvent(name, output, is_error))
 
     def _on_assistant_message(self, content: str) -> None:
         """Agent 助手消息回调。"""
-        self.call_from_thread(self.post_message, AssistantMessageEvent(content))
+        self._emit(AssistantMessageEvent(content))
 
     def _on_progress_message(self, content: str) -> None:
         """Agent 进度消息回调。"""
-        self.call_from_thread(self.post_message, ProgressMessageEvent(content))
+        self._emit(ProgressMessageEvent(content))
 
     def _on_context_stats(self, stats) -> None:
         """Agent 上下文统计回调。"""
-        self.call_from_thread(self.post_message, ContextStatsEvent(stats))
+        self._emit(ContextStatsEvent(stats))
 
     def _on_compression(self, kind: str, result: dict) -> None:
         """Agent 压缩事件回调。"""
-        self.call_from_thread(self.post_message, CompressionEvent(kind, result))
+        self._emit(CompressionEvent(kind, result))
 
     def on_tool_start_event(self, event: ToolStartEvent) -> None:
         """处理工具开始事件。"""
