@@ -14,6 +14,7 @@ CamelCode is a terminal-based AI coding assistant. It combines a lightweight TUI
 - **TUI interface**: Rich terminal UI (`python main.py`).
 - **Tool-use agent**: Reads files, writes files, runs shell commands, searches with glob, and asks you clarifying questions when needed.
 - **Context compression pipeline**: Snip → Microcompact → Context Collapse → Auto-compact, designed to keep long conversations within model context windows.
+- **Skill discovery and loading**: Automatically discovers `SKILL.md` files under project-level and user-level `.claude/skills` and lists them in the system prompt. When the user mentions a skill, the agent calls `load_skill` to load its details first.
 - **Hot-reloadable config**: Change model, API key, or base URL at runtime without restarting.
 - **Multi-provider**: Supports Anthropic and OpenAI-compatible endpoints out of the box.
 - **Bilingual by design**: Code in English, comments and UI strings in Chinese.
@@ -132,6 +133,7 @@ Long tool outputs and conversation history are managed in four layers:
 | `edit_file` | Replace exact text in a file |
 | `glob` | Search files by pattern |
 | `ask_user` | Ask the user a clarifying question and pause the turn |
+| `load_skill` | Load the content of a `SKILL.md` from project or user skills directory |
 
 ## Development
 
@@ -150,7 +152,8 @@ PYTHONPATH=$(pwd) pytest test/ -v
 │   ├── agents/             # LeadAgent + LangGraph
 │   ├── compact/            # Four-layer compression pipeline
 │   ├── models/             # LLM adapter
-│   ├── prompts.py          # System prompt
+│   ├── prompts.py          # System prompt (includes skill discovery)
+│   ├── skill/              # Skill discovery, loading, and schema
 │   ├── tools/              # Tool definitions
 │   ├── tui/                # Textual UI
 │   └── utils/              # Token estimation, etc.

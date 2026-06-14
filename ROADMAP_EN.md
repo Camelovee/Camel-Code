@@ -38,7 +38,7 @@ This document outlines the phased development plan for CamelCode. Priorities and
 
 ### v0.2.0 — Skills and workflows
 
-- [ ] Skill discovery and loading mechanism
+- [x] Skill discovery and loading mechanism
 - [ ] Built-in skills: code review, refactoring, test generation, documentation
 - [ ] Workflow orchestration with multi-step tasks, branches, and human-in-the-loop checkpoints
 - [ ] `/skill` slash command for quick skill loading
